@@ -6,7 +6,7 @@ from datetime import datetime
 
 from AgentCard import AgentCard
 from DetailedPanel import DetailedPanel
-from inventory import create_inventory_view
+from presenter.inventory_presenter import create_inventory_page
 
 
 
@@ -58,8 +58,9 @@ class MainDashboard(QMainWindow):
         self.stacked_widget.addWidget(self.dashboard_view)
         
         # Inventory view 
-        self.inventory_view = create_inventory_view()  
-        self.stacked_widget.addWidget(self.inventory_view)
+        self.inventory_page = create_inventory_page(parent=self)  
+        self.stacked_widget.addWidget(self.inventory_page)
+        
         
         # Detailed panel
         self.detailed_panel = DetailedPanel()
