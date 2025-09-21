@@ -1,11 +1,12 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QComboBox,
     QSplitter, QTableWidget, QTableWidgetItem, QHeaderView, QSpinBox, QFrame,
-    QFormLayout, QDoubleSpinBox
+    QFormLayout, QDoubleSpinBox, QCheckBox, QMessageBox ,QStackedLayout
 )
 
 
@@ -43,69 +44,164 @@ class Sparkline(QWidget):
 
 
 # -----------------------------
+
 class DetailPanel(QFrame):
-    save_requested = Signal(dict, bool)   # values, is_new
+    # signals: שמירת טופס / מחיקה / סגירה
+    save_requested = Signal(dict, bool)   # (values, is_new)
     delete_requested = Signal(str)        # product_id
     cancel_requested = Signal()
 
-    def __init__(self, parent=None, *, is_new=False, product=None, sales_series=None):
+    def __init__(self, parent=None, *, is_new: bool=False,
+                 product: Optional[Dict[str, Any]]=None,
+                 sales_series: Optional[list]=None):
         super().__init__(parent)
-        self.setStyleSheet("QFrame{background:#23272E;border:1px solid #2B2B2B;border-radius:10px}")
+        self.setStyleSheet(
+            "QFrame{background:#23272E;border:1px solid #2B2B2B;border-radius:10px}"
+        )
         self.is_new = is_new
-        self._product = product or {"product_id":"", "name":"", "price":0.0, "quantity":0}
+        self._product = product or {
+            "product_id": "",
+            "name": "",
+            "price": 0.0,
+            "quantity": 0,
+            "brand": "",
+            "category": "",
+            "is_on_promotion": 0,
+        }
 
-        top = QVBoxLayout(self); top.setContentsMargins(12,12,12,12); top.setSpacing(8)
+        top = QVBoxLayout(self)
+        top.setContentsMargins(12, 12, 12, 12)
+        top.setSpacing(8)
+
+        # כותרת
         title = QLabel("New Product" if is_new else f"Edit: {self._product.get('product_id','')}")
         title.setStyleSheet("color:#B0B0B0;font-weight:600;")
         top.addWidget(title)
 
+        # טופס
         form = QFormLayout()
-        self.id = QLineEdit(self._product.get("product_id","")); self.id.setReadOnly(not is_new)
-        self.name = QLineEdit(self._product.get("name",""))
-        self.price = QDoubleSpinBox(); self.price.setRange(0, 1_000_000); self.price.setDecimals(2); self.price.setValue(float(self._product.get("price",0.0)))
-        self.qty = QSpinBox(); self.qty.setRange(0, 1_000_000); self.qty.setValue(int(self._product.get("quantity",0)))
-        for w in (self.id, self.name, self.price, self.qty):
-            if hasattr(w, "setFixedHeight"): w.setFixedHeight(32)
+        form.setLabelAlignment(Qt.AlignLeft)
+        form.setFormAlignment(Qt.AlignTop)
+
+        self.id = QLineEdit(self._product.get("product_id", ""))
+        self.id.setReadOnly(not is_new)  # לא מאפשרים לשנות מזהה בפריט קיים
+
+        self.name = QLineEdit(self._product.get("name", ""))
+
+        self.price = QDoubleSpinBox()
+        self.price.setRange(0, 1_000_000)
+        self.price.setDecimals(2)
+        self.price.setValue(self._safe_float(self._product.get("price"), 0.0))
+
+        self.qty = QSpinBox()
+        self.qty.setRange(0, 1_000_000)
+        self.qty.setValue(self._safe_int(self._product.get("quantity"), 0))
+
+        # שדות נוספים (רק להצגה/עריכה – לא חובה להשתמש בהם כרגע)
+        self.brand = QLineEdit(self._product.get("brand", "") or "")
+        self.category = QLineEdit(self._product.get("category", "") or "")
+        self.is_promo = QCheckBox("On Promotion")
+        self.is_promo.setChecked(bool(self._product.get("is_on_promotion", 0)))
+
+        # גובה אחיד
+        for w in (self.id, self.name, self.price, self.qty, self.brand, self.category):
+            if hasattr(w, "setFixedHeight"):
+                w.setFixedHeight(32)
+
         form.addRow("Product ID:", self.id)
         form.addRow("Name:", self.name)
         form.addRow("Price:", self.price)
         form.addRow("Quantity:", self.qty)
+        form.addRow("Brand:", self.brand)
+        form.addRow("Category:", self.category)
+        form.addRow("", self.is_promo)
         top.addLayout(form)
 
-        # Sales chart
-        chart_title = QLabel("Recent Sales"); chart_title.setStyleSheet("color:#B0B0B0;")
-        self.chart = Sparkline(); self.chart.setMinimumHeight(160)
-        self.chart.set_series(sales_series or [])
-        top.addWidget(chart_title)
-        top.addWidget(self.chart)
+        # גרף מכירות קטן (אם קיים Sparkline)
+        if Sparkline is not None:
+            chart_title = QLabel("Recent Sales")
+            chart_title.setStyleSheet("color:#B0B0B0;")
+            self.chart = Sparkline(self)
+            self.chart.setMinimumHeight(160)
+            try:
+                self.chart.set_series(sales_series or [])
+            except Exception:
+                pass
+            top.addWidget(chart_title)
+            top.addWidget(self.chart)
 
-        # Buttons
+        # כפתורים
         btns = QHBoxLayout()
-        self.btn_save = QPushButton("Save"); self.btn_save.setStyleSheet("background:#00E0FF;color:#23272E;border:none;border-radius:8px;padding:0 14px;font-weight:700;")
-        self.btn_cancel = QPushButton("Close"); self.btn_cancel.setStyleSheet("background:#23272E;color:#B0B0B0;border:1px solid #2B2B2B;border-radius:8px;padding:0 14px;")
-        btns.addStretch(1); btns.addWidget(self.btn_cancel); btns.addWidget(self.btn_save)
+        self.btn_save = QPushButton("Save")
+        self.btn_save.setStyleSheet(
+            "background:#00E0FF;color:#23272E;border:none;border-radius:8px;"
+            "padding:0 14px;font-weight:700;"
+        )
+        self.btn_cancel = QPushButton("Close")
+        self.btn_cancel.setStyleSheet(
+            "background:#23272E;color:#B0B0B0;border:1px solid #2B2B2B;"
+            "border-radius:8px;padding:0 14px;"
+        )
+        btns.addStretch(1)
+        btns.addWidget(self.btn_cancel)
+        btns.addWidget(self.btn_save)
+
         if not is_new:
-            self.btn_delete = QPushButton("Delete"); self.btn_delete.setStyleSheet("background:#23272E;color:#F44336;border:1px solid #F44336;border-radius:8px;padding:0 14px;font-weight:700;")
+            self.btn_delete = QPushButton("Delete")
+            self.btn_delete.setStyleSheet(
+                "background:#23272E;color:#F44336;border:1px solid #F44336;"
+                "border-radius:8px;padding:0 14px;font-weight:700;"
+            )
             btns.insertWidget(1, self.btn_delete)
+
         top.addLayout(btns)
 
+        # חיבורים
         self.btn_save.clicked.connect(self._emit_save)
         self.btn_cancel.clicked.connect(self.cancel_requested.emit)
         if not is_new:
-            self.btn_delete.clicked.connect(lambda: self.delete_requested.emit(self.id.text().strip()))
+            self.btn_delete.clicked.connect(
+                lambda: self.delete_requested.emit(self.id.text().strip())
+            )
 
+    # שמירה – בניית payload בטוח
     def _emit_save(self):
         vals = {
             "product_id": self.id.text().strip(),
             "name": self.name.text().strip(),
-            "price": float(self.price.value()),
-            "quantity": int(self.qty.value()),
+            "price": self._safe_float(self.price.value(), 0.0),
+            "quantity": self._safe_int(self.qty.value(), 0),
+            "brand": self.brand.text().strip(),
+            "category": self.category.text().strip(),
+            "is_on_promotion": 1 if self.is_promo.isChecked() else 0,
         }
+
+        # ולידציה בסיסית
         if not vals["product_id"] or not vals["name"]:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Validation", "Product ID and Name are required.")
             return
+
         self.save_requested.emit(vals, self.is_new)
+
+    # עזרים בטוחים למספרים
+    @staticmethod
+    def _safe_float(v, default=0.0) -> float:
+        try:
+            if v is None or v == "":
+                return default
+            return float(v)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _safe_int(v, default=0) -> int:
+        try:
+            if v is None or v == "":
+                return default
+            return int(v)
+        except Exception:
+            return default
+
 
 
 # -----------------------------
@@ -122,13 +218,16 @@ class InventoryView(QWidget):
         self.search.setStyleSheet("background:#23272E;color:#B0B0B0;border:1px solid #2B2B2B;border-radius:8px;padding:0 10px;")
         
         self.category = QComboBox()
-        self.category.addItems(["All","Beverages","Dairy","Bakery","Produce","Frozen","Snacks","Household","Personal Care"])
-        
-        self.status = QComboBox()
-        self.status.addItems(["All","OK","Low","Critical","Overstock","Deleted"])
-        for w in (self.category, self.status):
-            w.setFixedHeight(32)
-            w.setStyleSheet("background:#23272E;color:#B0B0B0;border:1px solid #2B2B2B;border-radius:8px;padding:0 8px;")
+        self.category.addItem("All")
+        self.category.setFixedHeight(32)
+        self.category.setStyleSheet("background:#23272E;color:#B0B0B0;border:1px solid #2B2B2B;border-radius:8px;padding:0 8px;")
+
+        self.brand = QComboBox()
+        self.brand.setEditable(True)
+        self.brand.lineEdit().setPlaceholderText("Brand…")
+        self.brand.addItem("All")
+        self.brand.setFixedHeight(32)
+        self.brand.setStyleSheet("background:#23272E;color:#B0B0B0;border:1px solid #2B2B2B;border-radius:8px;padding:0 8px;")
         
         self.refresh = QPushButton("Refresh"); self.add_btn = QPushButton("Add")
         for b in (self.refresh, self.add_btn):
@@ -141,7 +240,7 @@ class InventoryView(QWidget):
         bar.addSpacing(8)
         bar.addWidget(self.search,2)
         bar.addWidget(self.category)
-        bar.addWidget(self.status)
+        bar.addWidget(self.brand)
         bar.addWidget(self.refresh)
         bar.addWidget(self.add_btn)
         bar.addStretch(1)
@@ -151,9 +250,9 @@ class InventoryView(QWidget):
         self.split = QSplitter(Qt.Horizontal)
         self.split.setHandleWidth(1)
 
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels([
-            "ProductId", "Name", "Price", "Quantity", "IsDeleted", "UpdatedAt"
+            "Name", "ProductId", "Price", "Quantity", "Promotion"
         ])
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -179,79 +278,120 @@ class InventoryView(QWidget):
 
 
         self.detail_host = QFrame()
-        self.detail_layout = QVBoxLayout(self.detail_host)
-        self.detail_layout.setContentsMargins(12,12,12,12)
-        self.detail_layout.setSpacing(8)
+        self.stack = QStackedLayout(self.detail_host)
+        self.stack.setContentsMargins(12,12,12,12)
+
         self.placeholder = QLabel("Double-click a product to view & edit.\nOr click 'Add' to create a new one.")
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.placeholder.setStyleSheet("color:#6C7480;")
-        self.detail_layout.addWidget(self.placeholder)
+
+        self.stack.addWidget(self.placeholder)   # index 0
+        self._detail_widget = None
+
         self.split.addWidget(self.detail_host)
-        self.split.setSizes([760, 380])
+
+        
+        self.detail_host.hide()
+        self.split.setSizes([1, 0])
         vbox.addWidget(self.split, 1)
 
     # API
     def set_rows(self, rows):
-    # rows = רשימת מילונים ישירות מה-DB, עם מפתחות: ProductId, Name, Price, Quantity, IsDeleted, UpdatedAt
-
         was_sorting = self.table.isSortingEnabled()
-        if was_sorting:
-            self.table.setSortingEnabled(False)
-
+        if was_sorting: self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
-
-        def _set_text(row, col, value):
-            item = QTableWidgetItem()
-            item.setData(Qt.DisplayRole, "" if value is None else str(value))
-            self.table.setItem(row, col, item)
-
-        def _set_number(row, col, value):
-            item = QTableWidgetItem()
-            try:
-                num = float(value)
-                item.setData(Qt.DisplayRole, num)
-                item.setData(Qt.EditRole, num)  # כדי שמיון יהיה מספרי
-            except Exception:
-                item.setData(Qt.DisplayRole, "" if value is None else str(value))
-            self.table.setItem(row, col, item)
 
         for r in rows:
             row = self.table.rowCount()
             self.table.insertRow(row)
 
-            _set_text  (row, 0, r.get("ProductId"))
-            _set_text  (row, 1, r.get("Name"))
-            _set_number(row, 2, r.get("Price"))
-            _set_number(row, 3, r.get("Quantity"))
-            _set_text  (row, 4, r.get("IsDeleted"))
-            _set_text  (row, 5, r.get("UpdatedAt"))
+            # Name (טקסט)
+            self.table.setItem(row, 0, QTableWidgetItem(str(r.get("Name",""))))
+            # ProductId (SKU)
+            self.table.setItem(row, 1, QTableWidgetItem(str(r.get("ProductId",""))))
+            # Price (מספר)
+            price_item = QTableWidgetItem()
+            price = r.get("Price")
+            if price is not None:
+                price_item.setData(Qt.DisplayRole, float(price))
+                price_item.setData(Qt.EditRole, float(price))
+            self.table.setItem(row, 2, price_item)
+            # Quantity (מספר)
+            qty_item = QTableWidgetItem()
+            qty = r.get("Quantity")
+            if qty is not None:
+                qty_item.setData(Qt.DisplayRole, int(qty))
+                qty_item.setData(Qt.EditRole, int(qty))
+            self.table.setItem(row, 3, qty_item)
+            # Promotion (Yes/No)
+            promo_txt = "Yes" if r.get("IsOnPromotion") else "No"
+            self.table.setItem(row, 4, QTableWidgetItem(promo_txt))
 
         if was_sorting:
             self.table.setSortingEnabled(True)
 
+
     def current_filters(self) -> Dict[str, Any]:
+        cat = self.category.currentText()
+        br  = self.brand.currentText()
         return {
             "query": self.search.text().strip(),
-            "category": None if self.category.currentText()=="All" else self.category.currentText(),
-            "status": None if self.status.currentText()=="All" else self.status.currentText(),
+            "category": None if cat == "All" else cat,
+            "brand": None if br == "All" or not br.strip() else br.strip(),
         }
 
     def selected_product_id(self) -> str:
         sel = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
-        if not sel:
-            return ""
+        if not sel: return ""
         r = sel[0].row()
-        item = self.table.item(r, 1)
+        item = self.table.item(r, 1)  # עמודה 1 = ProductId
         return item.text() if item else ""
 
-    def set_detail_widget(self, widget: QWidget):
-        while self.detail_layout.count():
-            w = self.detail_layout.takeAt(0).widget()
-            if w: w.deleteLater()
-        self.detail_layout.addWidget(widget)
+    def show_detail_widget(self, widget: QWidget):
+        if self._detail_widget is not None:
+            self.stack.removeWidget(self._detail_widget)
+            self._detail_widget.deleteLater()
+            self._detail_widget = None
+        self._detail_widget = widget
+        self.stack.addWidget(widget)
+        self.detail_host.show()
+        # יחסי רוחב נעימים (התאם כרצונך)
+        self.split.setSizes([760, 380])
+        self.stack.setCurrentWidget(widget)
 
-    def show_placeholder(self):
-        while self.detail_layout.count():
-            w = self.detail_layout.takeAt(0).widget()
-            if w: w.deleteLater()
-        self.detail_layout.addWidget(self.placeholder)
+    def collapse_detail(self):
+        # סגירת חלון צד והחזרת הטבלה לרוחב מלא
+        if self._detail_widget is not None:
+            self.stack.removeWidget(self._detail_widget)
+            self._detail_widget.deleteLater()
+            self._detail_widget = None
+        self.detail_host.hide()
+        self.split.setSizes([1, 0])
+
+    def notify(self, text: str, title: str = "Info"):
+        QMessageBox.information(self, title, text)
+
+    def set_category_options(self, categories: List[str]):
+        current = self.category.currentText()
+        self.category.blockSignals(True)
+        self.category.clear()
+        self.category.addItem("All")
+        for c in categories:
+            self.category.addItem(c)
+        if current and current in (["All"] + categories):
+            self.category.setCurrentText(current)
+        self.category.blockSignals(False)
+
+    def set_brand_options(self, brands: List[str]):
+        current = self.brand.currentText()
+        self.brand.blockSignals(True)
+        self.brand.clear()
+        self.brand.addItem("All")
+        for b in brands:
+            self.brand.addItem(b)
+        # אם המשתמש הקליד מותג שלא ברשימה – נשמר את הטקסט שהקליד
+        if current and current not in (["All"] + brands):
+            self.brand.setEditText(current)
+        self.brand.blockSignals(False)
+
+

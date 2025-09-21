@@ -10,7 +10,8 @@ class WriteController:
     def __init__(self):
         pass
 
-    def create_product(self, product_id: str, name: str, price: float, quantity: int) -> dict:
+    def create_product(self, product_id: str, name: str, price: float, quantity: int
+                       , brand: str, category: str, is_on_promotion: int) -> dict:
         if price < 0 or quantity < 0:
             raise ValueError("Price/Quantity must be non-negative")
         
@@ -23,14 +24,19 @@ class WriteController:
             "name": name,
             "price": float(price),
             "quantity": int(quantity),
+            "brand": brand,
+            "category": category,
+            "is_on_promotion": int(is_on_promotion),
         }
+
 
         agg.commit_event("ProductCreated", event)
 
         return {"ok": True}
 
     def update_product(self, product_id: str,name: Optional[str],price: Optional[float],
-                       quantity: Optional[int]) -> dict:
+                       quantity: Optional[int], brand: Optional[str], category: Optional[str],
+                       is_on_promotion: Optional[int]) -> dict:
         if price is not None and price < 0:
             raise ValueError("Price must be non-negative")
         if quantity is not None and quantity < 0:
@@ -45,6 +51,9 @@ class WriteController:
             "name": name,
             "price": float(price) if price is not None else None,
             "quantity": int(quantity) if quantity is not None else None,
+            "brand": brand,
+            "category": category,
+            "is_on_promotion": int(is_on_promotion) if is_on_promotion is not None else None,
         }
 
         agg.commit_event("ProductUpdated", event)

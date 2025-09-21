@@ -9,8 +9,12 @@ class ProductRead:
     name: str
     price: float
     quantity: int
+    brand: Optional[str]
+    category: Optional[str]
+    is_on_promotion: bool
     is_deleted: bool
-    updated_at: object  # datetime-like
+    updated_at: object   
+
 
 class ProductReadModel:
     """
@@ -19,7 +23,7 @@ class ProductReadModel:
     @staticmethod
     def list_products(include_deleted: bool=False) -> List[ProductRead]:
         sql = (
-            "SELECT ProductId, Name, Price, Quantity, IsDeleted, UpdatedAt "
+            "SELECT ProductId, Name, Price, Quantity, Brand, Category, IsOnPromotion, IsDeleted, UpdatedAt "
             "FROM dbo.ProductsReadModel "
         )
         if not include_deleted:
@@ -37,8 +41,11 @@ class ProductReadModel:
                 name=row[1],
                 price=float(row[2]),
                 quantity=int(row[3]),
-                is_deleted=bool(row[4]),
-                updated_at=row[5],
+                brand=row[4],
+                category=row[5],
+                is_on_promotion=bool(row[6]),
+                is_deleted=bool(row[7]),
+                updated_at=row[8],
             )
             for row in rows
         ]
@@ -49,7 +56,7 @@ class ProductReadModel:
             cur = conn.cursor()
             cur.execute(
                 """
-                SELECT ProductId, Name, Price, Quantity, IsDeleted, UpdatedAt
+                SELECT ProductId, Name, Price, Quantity, Brand, Category, IsOnPromotion, IsDeleted, UpdatedAt
                 FROM dbo.ProductsReadModel
                 WHERE ProductId = ?
                 """,
@@ -65,6 +72,9 @@ class ProductReadModel:
             name=row[1],
             price=float(row[2]),
             quantity=int(row[3]),
-            is_deleted=bool(row[4]),
-            updated_at=row[5],
+            brand=row[4],
+            category=row[5],
+            is_on_promotion=bool(row[6]),
+            is_deleted=bool(row[7]),
+            updated_at=row[8],
         )

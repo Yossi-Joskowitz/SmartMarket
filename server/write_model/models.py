@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Tuple
 import json
 from common.db import get_conn  
+from datetime import datetime
 
 
 @dataclass
@@ -10,7 +11,11 @@ class Product:
     name: Optional[str] = None
     price: Optional[float] = None
     quantity: Optional[int] = None
+    brand: Optional[str] = None
+    category: Optional[str] = None
+    is_on_promotion: bool = False
     is_deleted: bool = False
+    updated_at: Optional[datetime] = None
 
     # --------------------------
     @classmethod
@@ -35,6 +40,10 @@ class Product:
                 prod.name = data["name"]
                 prod.price = float(data["price"])
                 prod.quantity = int(data["quantity"])
+                prod.brand = data.get("brand")
+                prod.category = data.get("category")
+                prod.is_on_promotion = data.get("is_on_promotion", False)
+                prod.updated_at = datetime.utcnow()
                 prod.is_deleted = False
 
             elif event_type == "ProductUpdated":
@@ -44,9 +53,17 @@ class Product:
                     prod.price = float(data["price"])
                 if "quantity" in data and data["quantity"] is not None:
                     prod.quantity = int(data["quantity"])
+                if "brand" in data and data["brand"] is not None:
+                    prod.brand = data["brand"]
+                if "category" in data and data["category"] is not None:
+                    prod.category = data["category"]
+                if "is_on_promotion" in data:
+                    prod.is_on_promotion = bool(data["is_on_promotion"])
+                prod.updated_at = datetime.utcnow()
 
             elif event_type == "ProductDeleted":
                 prod.is_deleted = True
+                prod.updated_at = datetime.utcnow()
 
         return prod
 
@@ -70,11 +87,14 @@ class Product:
 
 
     def _project_to_read_model(self, cur, event_type: str, data: Dict[str, Any]) -> None:
-        pid = data["product_id"]
+        product_id = data["product_id"]
         name = data.get("name")
         price = data.get("price")
         quantity = data.get("quantity")
-
+        brand = data.get("brand")
+        category = data.get("category")
+        is_on_promotion = data.get("is_on_promotion", 0)
+        
         if event_type == "ProductCreated":
             cur.execute(
                 """
@@ -82,24 +102,29 @@ class Product:
                 USING (SELECT ? AS ProductId) AS S
                 ON T.ProductId = S.ProductId
                 WHEN MATCHED THEN UPDATE SET
-                    Name = ?, Price = ?, Quantity = ?, IsDeleted = 0, UpdatedAt = SYSUTCDATETIME()
-                WHEN NOT MATCHED THEN INSERT (ProductId, Name, Price, Quantity, IsDeleted, UpdatedAt)
-                VALUES (?, ?, ?, ?, 0, SYSUTCDATETIME());
+                    Name = ?, Price = ?, Quantity = ?, Brand = ?, Category = ?, IsOnPromotion = ?, 
+                    IsDeleted = 0, UpdatedAt = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN INSERT (ProductId, Name, Price, Quantity, Brand, Category, IsOnPromotion, IsDeleted, UpdatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, SYSUTCDATETIME());
                 """,
-                (pid, name, price, quantity, pid, name, price, quantity)
+                (product_id, name, price, quantity, brand, category, is_on_promotion,
+                product_id, name, price, quantity, brand, category, is_on_promotion)
             )
 
         elif event_type == "ProductUpdated":
             cur.execute(
                 """
                 UPDATE dbo.ProductsReadModel
-                SET Name     = COALESCE(?, Name),
-                    Price    = COALESCE(?, Price),
+                SET Name = COALESCE(?, Name),
+                    Price = COALESCE(?, Price),
                     Quantity = COALESCE(?, Quantity),
+                    Brand = COALESCE(?, Brand),
+                    Category = COALESCE(?, Category),
+                    IsOnPromotion = COALESCE(?, IsOnPromotion),
                     UpdatedAt = SYSUTCDATETIME()
                 WHERE ProductId = ? AND IsDeleted = 0
                 """,
-                (name, price, quantity, pid)
+                (name, price, quantity, brand, category, is_on_promotion, product_id)
             )
 
         elif event_type == "ProductDeleted":
@@ -109,5 +134,5 @@ class Product:
                 SET IsDeleted = 1, UpdatedAt = SYSUTCDATETIME()
                 WHERE ProductId = ?
                 """,
-                (pid,)
+                (product_id,)
             )
