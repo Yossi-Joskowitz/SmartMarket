@@ -58,7 +58,7 @@ class MainDashboard(QMainWindow):
         self.stacked_widget.addWidget(self.dashboard_view)
         
         # Inventory view 
-        self.inventory_page = create_inventory_page(parent=self)  
+        self.inventory_page = create_inventory_page()  
         self.stacked_widget.addWidget(self.inventory_page)
         
         

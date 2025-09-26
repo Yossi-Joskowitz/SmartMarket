@@ -1,120 +1,88 @@
-import hashlib, random, sys
+from __future__ import annotations
 from typing import List, Dict, Any
-from PySide6.QtWidgets import QMessageBox, QMenu, QApplication
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+
+
 from view.inventory_view import InventoryView, DetailPanel
-from model.inventory_model import ApiService, ReadProduct
+from model.inventory_model import InventoryModel, ReadProduct
 
 
 
-def sales_series_for(pid: str, points: int=12) -> List[int]:
-    h = int(hashlib.sha256(pid.encode("utf-8")).hexdigest(), 16) % (10**8)
-    rng = random.Random(h)
-    base = rng.randint(30, 160)
-    series, val = [], base
-    for _ in range(points):
-        val = max(0, val + rng.randint(-20, 20))
-        series.append(val)
-    return series
-
-
-# Presenter
 class InventoryPresenter:
-    def __init__(self, view: InventoryView, api: ApiService):
+    def __init__(self, view: InventoryView, model: InventoryModel):
         self.v = view
-        self.api = api
+        self.m = model
         self._data_raw: List[ReadProduct] = []
+        self._all_categories: List[str] = []
+        self._all_brands: List[str] = []
 
-        # Wire all signals
+        # Wire all UI events
         self.v.refresh.clicked.connect(self.reload)
         self.v.add_btn.clicked.connect(self.on_add)
         self.v.search.textChanged.connect(self.apply_filters)
         self.v.category.currentIndexChanged.connect(self.apply_filters)
-        self.v.brand.currentTextChanged.connect(self.apply_filters)  
+        self.v.brand.currentTextChanged.connect(self.apply_filters)
         self.v.table.cellDoubleClicked.connect(self._on_dbl)
         self.v.table.customContextMenuRequested.connect(self._open_menu)
 
+        self._load_filter_options()
         self.reload()
 
-    # Data
-    def reload(self):
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+    def reload(self,):
+        self.v.cursor_wait()
         try:
-            # ברירת מחדל: לא להביא מחוקים
-            js = self.api.list_products(include_deleted=False)
-            self._data_raw = [ReadProduct.from_json(x) for x in js]
-
-            # ערכים ייחודיים, ממוין אלפביתית, ללא ריקים
-            categories = sorted({(p.category or "").strip() for p in self._data_raw if (p.category or "").strip()})
-            brands     = sorted({(p.brand or "").strip() for p in self._data_raw if (p.brand or "").strip()})
-
-            self.v.set_category_options(categories)
-            self.v.set_brand_options(brands)
-
+            self._load_filter_options()
             self.apply_filters()
-        except Exception as e:
-            QMessageBox.critical(self.v, "Load Failed", f"{e}")
         finally:
-            QApplication.restoreOverrideCursor()
+            self.v.cursor_wait(False)
 
+    def _load_filter_options(self):
+        try:
+            cats = self.m.distinct_categories()
+            brs  = self.m.distinct_brands()
+            self._all_categories = sorted({(c or "").strip() for c in cats if (c or "").strip()})
+            self._all_brands     = sorted({(b or "").strip() for b in brs  if (b or "").strip()})
+            # מעדכן את ה־View; הוא כבר יודע לשמר בחירה אם אפשר וליפול ל-"All" אם לא
+            self.v.set_category_options(self._all_categories)
+            self.v.set_brand_options(self._all_brands)
+        except Exception as e:
+            self.v.notify(f"Failed to load filter options: {e}", "Error", critical=True)
+    
     def apply_filters(self):
         f = self.v.current_filters()
-        query = (f.get("query") or "").lower()
-        f_category = f.get("category")
-        f_brand = f.get("brand")
-
         try:
-            js = self.api.list_products(include_deleted=False)
+            js = self.m.list_products(
+                include_deleted=False,
+                query=f.get("query") or None,
+                category=f.get("category") or None,
+                brand=f.get("brand") or None,
+            )
             self._data_raw = [ReadProduct.from_json(x) for x in js]
         except Exception as e:
-            QMessageBox.critical(self.v, "Load Failed", f"{e}")
+            self.v.notify(f"Failed to load products: {e}", "Error", critical=True)
             return
 
-        rows: List[Dict[str, Any]] = []
-        for p in self._data_raw:
-            # חיפוש חופשי
-            if query and (query not in (p.product_id or "").lower() and query not in (p.name or "").lower()):
-                continue
-
-            # סינון לפי קטגוריה (אם נבחרה)
-            if f_category and p.category != f_category:
-                continue
-
-            # סינון לפי חברה (אם נבחרה)
-            if f_brand and p.brand != f_brand:
-                continue
-
-            rows.append({
-                "Name": p.name or "",
-                "ProductId": p.product_id or "",
-                "Price": float(p.price) if p.price is not None else None,
-                "Quantity": int(p.quantity) if p.quantity is not None else None,
-                "IsOnPromotion": getattr(p, "is_on_promotion", False),
-            })
+        rows = [{
+            "Name": p.name or "",
+            "ProductId": p.product_id or "",
+            "Price": float(p.price) if p.price is not None else None,
+            "Quantity": int(p.quantity) if p.quantity is not None else None,
+            "IsOnPromotion": bool(getattr(p, "is_on_promotion", False)),
+        } for p in self._data_raw]
 
         self.v.set_rows(rows)
 
-        # עדכון אופציות לקטגוריות/חברות באופן דינמי
-        cats = sorted(set(p.category for p in self._data_raw if p.category))
-        brs = sorted(set(p.brand for p in self._data_raw if p.brand))
-        self.v.set_category_options(cats)
-        self.v.set_brand_options(brs)
 
-
-    # Detail
+    # ---------- Detail ----------
     def _on_dbl(self, r: int, _c: int):
         item = self.v.table.item(r, 1)  # 1 = ProductId
         pid = item.text() if item else ""
         if pid:
             self.on_open(pid)
 
-
-
     def on_open(self, product_id: str):
         try:
-            js = self.api.get_product(product_id)  # מחזיר snake_case
-            product_payload = {
+            js = self.m.get_product(product_id)
+            payload = {
                 "product_id": js.get("product_id", ""),
                 "name": js.get("name", ""),
                 "price": js.get("price", 0.0),
@@ -122,85 +90,107 @@ class InventoryPresenter:
                 "brand": js.get("brand"),
                 "category": js.get("category"),
                 "is_on_promotion": 1 if js.get("is_on_promotion") else 0,
-                "updated_at": js.get("updated_at"),
             }
-            panel = DetailPanel(self.v, is_new=False, product=product_payload,
-                                sales_series=sales_series_for(product_id))
-            panel.save_requested.connect(self.detail_save)
-            panel.delete_requested.connect(self.on_delete)
-            panel.cancel_requested.connect(self._on_close_detail)
+            panel = DetailPanel(self.v, is_new=False)
+            panel.set_form_data(payload, is_new=False)
+
+            # חיבורים לכפתורים
+            panel.btn_save.clicked.connect(lambda checked=False, p=panel: self.detail_save(p))
+            panel.btn_cancel.clicked.connect(self._on_close_detail)
+            # הוספת Delete רק לעריכה
+            panel.btn_delete = self.v.create_btn("Delete", "background:#23272E;color:#F44336;border:1px solid #F44336;border-radius:8px;padding:0 14px;font-weight:700;")
+            panel.layout().itemAt(panel.layout().count() - 1).layout().insertWidget(1, panel.btn_delete)  # להכניס בין Close ל-Save
+            panel.btn_delete.clicked.connect(lambda checked=False, p=panel: self.on_delete(p.get_product_id()))
+
             self.v.show_detail_widget(panel)
         except Exception as e:
-            QMessageBox.critical(self.v, "Open Failed", f"{e}")
+            self.v.notify(f"Open Failed: {e}", "Error", critical=True)
 
     def on_add(self):
-        panel = DetailPanel(self.v, is_new=True, product=None, sales_series=[])
-        panel.save_requested.connect(self.detail_save)
-        panel.delete_requested.connect(self.on_delete)
-        panel.cancel_requested.connect(self._on_close_detail)
+        panel = DetailPanel(self.v, is_new=True)
+        panel.set_form_data({
+            "product_id": "",
+            "name": "",
+            "price": 0.0,
+            "quantity": 0,
+            "brand": "",
+            "category": "",
+            "is_on_promotion": 0,
+        }, is_new=True)
+
+        panel.btn_save.clicked.connect(lambda checked=False, p=panel: self.detail_save(p))
+        panel.btn_cancel.clicked.connect(self._on_close_detail)
+        # אין Delete בפריט חדש
+
         self.v.show_detail_widget(panel)
 
-    def detail_save(self, vals: dict, is_new: bool):
+    def detail_save(self, panel: DetailPanel):
         try:
-            pid = vals["product_id"]
-            name = vals["name"]
-            price = float(vals["price"])
-            qty = int(vals["quantity"])
-            brand = vals.get("brand") or None
-            category = vals.get("category") or None
-            is_promo = 1 if vals.get("is_on_promotion") else 0  # שמור כ-int
+            vals = panel.get_form_data()
+            is_new = panel.is_new
 
+            # ולידציה בסיסית
+            if not vals["product_id"]:
+                return panel.show_error("Product ID is required.")
+            if not vals["name"]:
+                return panel.show_error("Name is required.")
+            if float(vals["price"]) < 0 or int(vals["quantity"]) < 0:
+                return panel.show_error("Price/Quantity cannot be negative.")
+
+            pid = vals["product_id"]
             if is_new:
-                self.api.create_product(
-                    pid, name, price, qty,
-                    brand=brand, category=category, is_on_promotion=is_promo
+                self.m.create_product(
+                    pid, vals["name"], float(vals["price"]), int(vals["quantity"]),
+                    brand=(vals.get("brand") or None),
+                    category=(vals.get("category") or None),
+                    is_on_promotion=1 if vals.get("is_on_promotion") else 0
                 )
             else:
-                self.api.update_product(
+                self.m.update_product(
                     pid,
-                    name=name, price=price, quantity=qty,
-                    brand=brand, category=category, is_on_promotion=is_promo
+                    name=vals["name"],
+                    price=float(vals["price"]),
+                    quantity=int(vals["quantity"]),
+                    brand=(vals.get("brand") or None),
+                    category=(vals.get("category") or None),
+                    is_on_promotion=1 if vals.get("is_on_promotion") else 0
                 )
 
             self.reload()
-            self.v.notify("Product '{}' {}.".format(pid, "created" if is_new else "updated"))
+            self.v.notify(f"Product '{pid}' {'created' if is_new else 'updated'}.")
             self.v.collapse_detail()
         except Exception as e:
-            QMessageBox.critical(self.v, "Save Failed", f"{e}")
+            self.v.notify(f"Save Failed: {e}", "Error", critical=True)
 
     def _on_close_detail(self):
         self.v.collapse_detail()
 
-
     def on_delete(self, product_id: str):
         if not product_id:
-            QMessageBox.information(self.v, "Select", "Select a row first.")
+            self.v.notify("Select a row first.", "Select")
             return
         try:
-            self.api.delete_product(product_id)
+            self.m.delete_product(product_id)
             self.reload()
             self.v.notify(f"Product '{product_id}' deleted.")
             self.v.collapse_detail()
         except Exception as e:
-            QMessageBox.critical(self.v, "Delete Failed", f"{e}")
+            self.v.notify(f"Delete Failed: {e}", "Error", critical=True)
 
-    # Context menu
+    # ---------- Context menu ----------
     def _open_menu(self, pos):
-        menu = QMenu(self.v)
-        a_add = QAction("Add Product", self.v); a_add.triggered.connect(self.on_add)
-        pid = self.v.selected_product_id()
-        a_edit = QAction("Edit Product", self.v); a_edit.triggered.connect(lambda: self.on_open(pid))
-        a_del = QAction("Delete Product", self.v); a_del.triggered.connect(lambda: self.on_delete(pid))
-        menu.addAction(a_add)
-        if pid:
-            menu.addAction(a_edit); menu.addAction(a_del)
-        menu.exec(self.v.table.viewport().mapToGlobal(pos))
+        action, pid = self.v.open_context_menu(pos)
+        if action == "add":
+            self.on_add()
+        elif action == "edit" and pid:
+            self.on_open(pid)
+        elif action == "delete" and pid:
+            self.on_delete(pid)
 
 
-def create_inventory_page(parent=None, api: ApiService | None = None):
-    view = InventoryView(parent)
-    api = api or ApiService()
-    view.presenter = InventoryPresenter(view, api)  
+
+def create_inventory_page() -> InventoryView:
+    view = InventoryView()
+    model = InventoryModel()
+    view.presenter = InventoryPresenter(view, model)
     return view
-
-
