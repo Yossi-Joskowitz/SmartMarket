@@ -13,7 +13,7 @@ SOMEE_CONN = (
 
 # PyODBC-style DSN-less string (same credentials):
 PYODBC_CONN = (
-    "DRIVER={ODBC Driver 18 for SQL Server};"
+    "DRIVER={ODBC Driver 17 for SQL Server};"
     "SERVER=SmartMarket.mssql.somee.com;"
     "DATABASE=SmartMarket;"
     "UID=yossijosko_SQLLogin_2;"

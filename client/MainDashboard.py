@@ -60,6 +60,10 @@ class MainDashboard(QMainWindow):
         # Inventory view 
         self.inventory_page = create_inventory_page()  
         self.stacked_widget.addWidget(self.inventory_page)
+
+        # Procurement view
+        self.procurement_page = create_inventory_page(parent=self)  # Placeholder, replace with actual
+        self.stacked_widget.addWidget(self.procurement_page)
         
         
         # Detailed panel
@@ -202,6 +206,8 @@ class MainDashboard(QMainWindow):
                 btn.clicked.connect(self.show_dashboard)
             elif text == "Inventory":
                 btn.clicked.connect(self.show_inventory)
+            elif text == "Procurement":
+                btn.clicked.connect(self.show_procurement)
             sidebar_layout.addWidget(btn)
             
         sidebar_layout.addStretch()
@@ -318,6 +324,9 @@ class MainDashboard(QMainWindow):
         
     def show_inventory(self):
         self.stacked_widget.setCurrentIndex(1)
+
+    def show_procurement(self):
+        self.stacked_widget.setCurrentIndex(3)
 
     def show_agent_details(self, agent_name):
         color = self.agent_colors[agent_name]
