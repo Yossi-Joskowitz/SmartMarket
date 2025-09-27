@@ -61,10 +61,25 @@ class MainDashboard(QMainWindow):
         self.inventory_page = create_inventory_page()  
         self.stacked_widget.addWidget(self.inventory_page)
 
+        # market view
+        # self.market_page = create_market_page()  # Placeholder, replace with actual
+        # self.stacked_widget.addWidget(self.market_page)
+
+        # Pricing view
+        # self.pricing_page = create_pricing_page()  # Placeholder, replace with actual
+        # self.stacked_widget.addWidget(self.pricing_page)
+
         # Procurement view
-        self.procurement_page = create_inventory_page(parent=self)  # Placeholder, replace with actual
-        self.stacked_widget.addWidget(self.procurement_page)
-        
+        #self.procurement_page = create_procurement_page()  # Placeholder, replace with actual
+        #self.stacked_widget.addWidget(self.procurement_page)
+
+        # Manager view
+        # self.manager_page = create_manager_page()  # Placeholder, replace with actual
+        # self.stacked_widget.addWidget(self.manager_page)
+
+        # Reports view
+        # self.reports_page = create_reports_page()  # Placeholder, replace with actual
+        # self.stacked_widget.addWidget(self.reports_page)
         
         # Detailed panel
         self.detailed_panel = DetailedPanel()
@@ -206,8 +221,16 @@ class MainDashboard(QMainWindow):
                 btn.clicked.connect(self.show_dashboard)
             elif text == "Inventory":
                 btn.clicked.connect(self.show_inventory)
-            elif text == "Procurement":
-                btn.clicked.connect(self.show_procurement)
+            #elif text == "Market":
+            #    btn.clicked.connect(self.show_market)
+           # elif text == "Pricing":
+            #    btn.clicked.connect(self.show_pricing)
+            #elif text == "Procurement":
+            #    btn.clicked.connect(self.show_procurement)
+            #elif text == "Manager":
+            #    btn.clicked.connect(self.show_manager)
+            #elif text == "Reports":
+            #    btn.clicked.connect(self.show_reports)
             sidebar_layout.addWidget(btn)
             
         sidebar_layout.addStretch()
@@ -325,8 +348,8 @@ class MainDashboard(QMainWindow):
     def show_inventory(self):
         self.stacked_widget.setCurrentIndex(1)
 
-    def show_procurement(self):
-        self.stacked_widget.setCurrentIndex(3)
+    #def show_procurement(self):
+    #    self.stacked_widget.setCurrentIndex(3)
 
     def show_agent_details(self, agent_name):
         color = self.agent_colors[agent_name]
