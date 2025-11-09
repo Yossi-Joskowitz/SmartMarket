@@ -12,7 +12,7 @@ if not HF_TOKEN:
     raise SystemExit("Missing HF_TOKEN. Set it with: export HF_TOKEN=hf_xxx")
 
 # for sentiment analysis
-SENTIMENT_API = "https://api-inference.huggingface.co/models/cardiffnlp/twitter-xlm-roberta-base-sentiment"
+SENTIMENT_API = "https://router.huggingface.co/hf-inference/models/cardiffnlp/twitter-xlm-roberta-base-sentiment"
 INF_HEADERS  = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 # for analyze and respond
@@ -21,7 +21,7 @@ MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 CHAT_HEADERS = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
 
 # for text classification
-API_URL_FOR_CLASSIFY = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
+API_URL_FOR_CLASSIFY = "https://router.huggingface.co/hf-inference/models/facebook/bart-large-mnli"
 HEADERS_FOR_CLASSIFY = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 # for SQL generation
@@ -106,7 +106,7 @@ class chatModel:
         response = response.json()
         if "error" in response:
             raise HTTPException(status_code=500, detail=f"Classification API error: {response['error']}")
-        response = dict(zip(response['labels'], response['scores']))
+        response = {item["label"]: item["score"] for item in response}
         response = {k: v > 0.5 for k, v in response.items()}
         return response
     
