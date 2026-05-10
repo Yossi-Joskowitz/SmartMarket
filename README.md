@@ -88,7 +88,36 @@ SmartMarket/
 
 ---
 
-## Running with Docker (Recommended)
+## Quickest Option — Client Only (Server is Live)
+
+The server is already deployed at **https://smartmarket-1.onrender.com** — you don't need to run it yourself.
+
+Just set up the client with that URL:
+
+1. Create `client/.env` (see `client/.env.example`) and set:
+```env
+URL=https://smartmarket-1.onrender.com
+```
+
+2. Run the client:
+```bash
+cd client
+python -m venv venv
+
+# Mac/Linux:
+source venv/bin/activate
+# Windows:
+venv\Scripts\activate
+
+pip install -r requirements.txt
+python main.py
+```
+
+That's it — no Docker, no server setup needed.
+
+---
+
+## Running with Docker (Self-hosted)
 
 ### 1. Fill in environment files
 
