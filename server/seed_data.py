@@ -105,13 +105,18 @@ def post(path: str, payload: dict):
     if not r.ok:
         print(f"POST {path} failed: {r.status_code} {r.text}")
 
+def post_params(path: str, payload: dict):
+    r = requests.post(f"{CMD}{path}", params=payload, timeout=30)
+    if not r.ok:
+        print(f"POST {path} failed: {r.status_code} {r.text}")
+
 def put(path: str, payload: dict):
     r = requests.put(f"{CMD}{path}", json=payload, timeout=30)
     if not r.ok:
         print(f"PUT {path} failed: {r.status_code} {r.text}")
 
-def delete(path: str, payload: dict):
-    r = requests.delete(f"{CMD}{path}", json=payload, timeout=30)
+def delete(path: str):
+    r = requests.delete(f"{CMD}{path}", timeout=30)
     if not r.ok:
         print(f"DELETE {path} failed: {r.status_code} {r.text}")
 
@@ -173,42 +178,35 @@ def seed(num_products: int = 150) -> None:
                 q = random.randint(5, 60)
                 unit_cost = round(cost * random.uniform(0.9, 1.15), 2)
                 events.append((
-                    "POST",
+                    "POST_PARAMS",
                     f"/product/{pid}/purchase",
-                    {
-                        "quantity": q,
-                        "purchase_unit_cost": unit_cost,
-                    },
+                    {"quantity": q, "purchase_unit_cost": unit_cost},
                 ))
 
             elif action == "sale":
                 q = random.randint(1, 12)
                 sale_price = round(price * random.uniform(0.9, 1.1), 2)
                 events.append((
-                    "POST",
+                    "POST_PARAMS",
                     f"/product/{pid}/sale",
-                    {
-                        "quantity": q,
-                        "sale_unit_price": sale_price,
-                        "sale_unit_cost": cost,
-                    },
+                    {"quantity": q, "sale_unit_price": sale_price, "sale_unit_cost": cost},
                 ))
 
             elif action == "price":
                 if random.random() < 0.7:
                     new_price = round(max(0.1, price * random.uniform(0.92, 1.12)), 2)
                     events.append((
-                        "POST",  # keep POST to avoid 405
+                        "POST_PARAMS",
                         f"/product/{pid}/change_price",
-                        { "current_price": new_price },
+                        {"current_price": new_price},
                     ))
                     price = new_price
                 else:
                     new_cost = round(max(0.05, cost * random.uniform(0.95, 1.08)), 2)
                     events.append((
-                        "POST",
+                        "POST_PARAMS",
                         f"/product/{pid}/change_price",
-                        { "cost_price": new_cost },
+                        {"cost_price": new_cost},
                     ))
                     cost = new_cost
 
@@ -225,29 +223,22 @@ def seed(num_products: int = 150) -> None:
                 if random.random() < 0.5:
                     fields["note"] = rand_note()
                 if fields:
-                    events.append((
-                        "PUT",
-                        f"/product/{pid}/update",
-                        { "fields": fields },
-                    ))
+                    events.append(("PUT", f"/product/{pid}/update", fields))
 
             elif action == "promo":
                 on = random.random() < 0.5
                 discount = round(random.uniform(5.0, 40.0), 2) if on else 0.0
                 events.append((
-                    "POST",
+                    "POST_PARAMS",
                     f"/product/{pid}/set_promotion",
-                    {
-                        "is_on_promotion": on,
-                        "promotion_discount_percent": discount,
-                    },
+                    {"is_on_promotion": on, "promotion_discount_percent": discount},
                 ))
 
             elif action == "note":
                 events.append((
-                    "POST",
+                    "POST_PARAMS",
                     f"/product/{pid}/add_note",
-                    { "note": rand_note() },
+                    {"note": rand_note()},
                 ))
 
         # Occasionally delete at the end for this product
@@ -284,10 +275,12 @@ def seed(num_products: int = 150) -> None:
         try:
             if method == "POST":
                 post(path, body)
+            elif method == "POST_PARAMS":
+                post_params(path, body)
             elif method == "PUT":
                 put(path, body)
             elif method == "DELETE":
-                delete(path, body)
+                delete(path)
             sent += 1
         except Exception as e:
             print(f"{method} {path} failed at {body['occurred_at_utc']}: {e}")

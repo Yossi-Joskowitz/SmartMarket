@@ -1,0 +1,7 @@
+services:
+  server:
+    build: ./server
+    ports:
+      - "10000:10000"
+    env_file:
+      - ./server/.env
